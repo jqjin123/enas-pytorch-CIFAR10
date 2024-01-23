@@ -29,7 +29,7 @@ class CNN(nn.Module):
             nn.Conv2d(3, self.out_filters*3, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(self.out_filters*3),
         )
-        self._compile_model()
+        self._compile_model()  # 先构建出整个网络全集  不同的搜索会激活网络的不同部分
         self._init_param(self.modules())
 
     def forward(self, inputs, dag):
@@ -47,7 +47,7 @@ class CNN(nn.Module):
                 self._compile_layer(self.layer[layer_id], layer_id, in_filters, out_filters)
             else:
                 out_filters *= 2
-                self._compile_reduction(self.layer[layer_id], in_filters, out_filters)
+                self._compile_reduction(self.layer[layer_id], in_filters, out_filters)  # 调整分辨率, 即分辨率减半 通道数加倍
                 in_filters = [in_filters[-1], out_filters]
                 self._compile_layer(self.layer[layer_id], layer_id, in_filters, out_filters)
             in_filters = [in_filters[-1], out_filters]
@@ -71,7 +71,7 @@ class CNN(nn.Module):
         self.add_module('final_fc', nn.Linear(out_filters, 10))
 
     def _compile_layer(self, module, layer_id, in_filters, out_filters):
-        self._compile_calibrate(module, in_filters, out_filters)
+        self._compile_calibrate(module, in_filters, out_filters)  # 调整通道
         module.add_module('cell', nn.ModuleList())
         for cell_id in range(self.num_cells):
             module.cell.append(nn.ModuleList())
@@ -111,7 +111,7 @@ class CNN(nn.Module):
         # TODO: Not sure
         if in_filters[0] * 2 == in_filters[1]:
             self._compile_reduction(module.calibrate, in_filters, out_filters)
-        if in_filters[0] != out_filters:
+        if in_filters[0] != out_filters: # 每个模块的输入有2个 pool_x调整第一个输入的通道数 pool_y调整第二个输入的通道数
             module.calibrate.add_module('pool_x', nn.Sequential(
                 nn.ReLU(),
                 nn.Conv2d(in_filters[0], out_filters, kernel_size=1, padding=0, bias=False),
@@ -220,7 +220,7 @@ class CNN(nn.Module):
         out = module.final_bn(out)
 
         out = out.view(prev_layers[0].shape)
-        return out
+        return out  # 输出维度为 (batchSize, 通道数, 宽, 高)
 
     def _maybe_calibrate_size(self, layers, module, out_filters):
         hw = [layer.shape[2] for layer in layers]
@@ -236,7 +236,7 @@ class CNN(nn.Module):
         y = layers[1]
         if c[1] != out_filters:
             y = module.pool_y(y)
-        return [x, y]
+        return [x, y]  # 返回后x和y的分辨率相同 且通道数都等于out_filters
 
     def _factorized_reduction(self, x, module):
         path1 = module.path1_conv(x)

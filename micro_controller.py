@@ -13,8 +13,8 @@ class Controller(torch.nn.Module):
         # TODO
         self.num_branches = args.child_num_branches
         self.num_cells = args.child_num_cells
-        self.lstm_size = args.lstm_size
-        self.lstm_num_layers = args.lstm_num_layers
+        self.lstm_size = args.lstm_size  # 隐藏状态的维度
+        self.lstm_num_layers = args.lstm_num_layers  # lstm层数
         self.lstm_keep_prob = args.lstm_keep_prob
         self.temperature = args.temperature
         self.tanh_constant = args.controller_tanh_constant
@@ -28,7 +28,7 @@ class Controller(torch.nn.Module):
         b_soft[:, 0:2] = 10
         self.b_soft = nn.Parameter(b_soft)
         b_soft_no_learn = np.array([0.25, 0.25] + [-0.25] * (self.num_branches-2))
-        b_soft_no_learn = np.reshape(b_soft_no_learn, [1, self.num_branches])
+        b_soft_no_learn = np.reshape(b_soft_no_learn, [1, self.num_branches])  # 维度为(1, num_branches)
         self.b_soft_no_learn = torch.Tensor(b_soft_no_learn).requires_grad_(False).cuda()
         # attention
         self.w_attn_1 = nn.Linear(self.lstm_size, self.lstm_size, bias=False)
@@ -42,8 +42,8 @@ class Controller(torch.nn.Module):
                 nn.init.uniform_(param, -0.1, 0.1)
 
     def forward(self):
-        arc_seq_1, entropy_1, log_prob_1, c, h = self.run_sampler(use_bias=True)
-        arc_seq_2, entropy_2, log_prob_2, _, _ = self.run_sampler(prev_c=c, prev_h=h)
+        arc_seq_1, entropy_1, log_prob_1, c, h = self.run_sampler(use_bias=True)  # normal_arc
+        arc_seq_2, entropy_2, log_prob_2, _, _ = self.run_sampler(prev_c=c, prev_h=h)  # reduce_arc
         sample_arc = (arc_seq_1, arc_seq_2)
         sample_entropy = entropy_1 + entropy_2
         sample_log_prob = log_prob_1 + log_prob_2
@@ -57,13 +57,13 @@ class Controller(torch.nn.Module):
             prev_c = torch.zeros(1, self.lstm_size).cuda()
             prev_h = torch.zeros(1, self.lstm_size).cuda()
 
-        inputs = self.encoder(torch.zeros(1).long().cuda())
+        inputs = self.encoder(torch.zeros(1).long().cuda())  # 开始输入为0
 
         anchors = []
         anchors_w_1 = []
         arc_seq = []
 
-        for layer_id in range(2):
+        for layer_id in range(2):  # 前两个节点是输入节点 获取他们对应的h1和h2
             embed = inputs
             next_h, next_c = self.lstm(embed, (prev_h, prev_c))
             prev_c, prev_h = next_c, next_h
@@ -94,7 +94,7 @@ class Controller(torch.nn.Module):
                 prob = F.softmax(logits, dim=-1)
                 index = torch.multinomial(prob, 1).long().view(1)
                 arc_seq.append(index)
-                arc_seq.append(0)
+                arc_seq.append(0)  # 为op_id预留位置
                 curr_log_prob = F.cross_entropy(logits, index)
                 log_prob.append(curr_log_prob)
                 curr_ent = -torch.mean(torch.sum(torch.mul(F.log_softmax(logits, dim=-1), prob), dim=1)).detach()
@@ -107,7 +107,7 @@ class Controller(torch.nn.Module):
                 embed = inputs
                 next_h, next_c = self.lstm(embed, (prev_h, prev_c))
                 prev_c, prev_h = next_c, next_h
-                logits = self.w_soft(next_h) + self.b_soft.requires_grad_()
+                logits = self.w_soft(next_h) + self.b_soft.requires_grad_()  # logits的维度是(1, num_branches), num_branches即操作类型数
                 if self.temperature is not None:
                     logits /= self.temperature
                 if self.tanh_constant is not None:
@@ -131,9 +131,9 @@ class Controller(torch.nn.Module):
             inputs = self.encoder(torch.zeros(1).long().cuda())
             layer_id += 1
 
-        arc_seq = torch.tensor(arc_seq)
-        entropy = sum(entropy)
-        log_prob = sum(log_prob)
+        arc_seq = torch.tensor(arc_seq)  # 若一共有5个节点, 则arc_seq的维度为(4*5, ) 前4个点分别表示 (pre_node1, op_id1, pre_node2, op_id2), 其余点类推
+        entropy = sum(entropy)  # entropy是个列表, 长度为20
+        log_prob = sum(log_prob)  # log_prob是个列表, 长度为20
         last_c = next_c
         last_h = next_h
 
